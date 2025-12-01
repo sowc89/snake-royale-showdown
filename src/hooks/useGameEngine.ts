@@ -1,5 +1,5 @@
 import { useState, useEffect, useCallback, useRef } from 'react';
-import { GameState, Snake, Direction, Position, GameMode, Food } from '@/types/game';
+import { GameState, Snake, Direction, Position, GameMode, Food, PlayerMode } from '@/types/game';
 
 const GRID_SIZE = 20;
 const TICK_RATE = 150; // ms per game tick
@@ -17,31 +17,44 @@ const INITIAL_SNAKE_2: Position[] = [
   { x: 17, y: 10 },
 ];
 
-export const useGameEngine = (mode: GameMode, player1Name: string, player2Name: string) => {
+export const useGameEngine = (mode: GameMode, playerMode: PlayerMode, player1Name: string, player2Name?: string) => {
   const [gameState, setGameState] = useState<GameState>({
-    snakes: [
-      {
-        id: 'player1',
-        body: INITIAL_SNAKE_1,
-        direction: 'RIGHT',
-        nextDirection: 'RIGHT',
-        alive: true,
-        score: 0,
-        color: 'snake1',
-      },
-      {
-        id: 'player2',
-        body: INITIAL_SNAKE_2,
-        direction: 'LEFT',
-        nextDirection: 'LEFT',
-        alive: true,
-        score: 0,
-        color: 'snake2',
-      },
-    ],
+    snakes: playerMode === 'single' 
+      ? [
+          {
+            id: 'player1',
+            body: INITIAL_SNAKE_1,
+            direction: 'RIGHT',
+            nextDirection: 'RIGHT',
+            alive: true,
+            score: 0,
+            color: 'snake1',
+          }
+        ]
+      : [
+          {
+            id: 'player1',
+            body: INITIAL_SNAKE_1,
+            direction: 'RIGHT',
+            nextDirection: 'RIGHT',
+            alive: true,
+            score: 0,
+            color: 'snake1',
+          },
+          {
+            id: 'player2',
+            body: INITIAL_SNAKE_2,
+            direction: 'LEFT',
+            nextDirection: 'LEFT',
+            alive: true,
+            score: 0,
+            color: 'snake2',
+          },
+        ],
     food: [],
     gridSize: GRID_SIZE,
     mode,
+    playerMode,
     status: 'waiting',
     timeRemaining: GAME_DURATION,
     winner: null,
@@ -196,13 +209,27 @@ export const useGameEngine = (mode: GameMode, player1Name: string, player2Name: 
 
       // Check if game should end
       const aliveSnakes = snakesAfterFood.filter(s => s.alive);
-      if (aliveSnakes.length <= 1 || prev.timeRemaining <= 0) {
+      
+      // Single player: game ends when player dies or time runs out
+      if (prev.playerMode === 'single') {
+        if (aliveSnakes.length === 0 || prev.timeRemaining <= 0) {
+          return {
+            ...prev,
+            snakes: snakesAfterFood,
+            food: newFood,
+            status: 'finished',
+            winner: aliveSnakes.length > 0 ? player1Name : 'Game Over',
+          };
+        }
+      } 
+      // Multiplayer: game ends when one or fewer snakes remain or time runs out
+      else if (aliveSnakes.length <= 1 || prev.timeRemaining <= 0) {
         const winner = aliveSnakes.length === 1
-          ? (aliveSnakes[0].id === 'player1' ? player1Name : player2Name)
+          ? (aliveSnakes[0].id === 'player1' ? player1Name : player2Name || 'Player 2')
           : snakesAfterFood[0].score > snakesAfterFood[1].score
             ? player1Name
             : snakesAfterFood[0].score < snakesAfterFood[1].score
-              ? player2Name
+              ? (player2Name || 'Player 2')
               : 'Draw';
 
         return {

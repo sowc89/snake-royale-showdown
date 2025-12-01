@@ -1,23 +1,44 @@
 import { useState, useEffect, useCallback } from 'react';
-import { useNavigate } from 'react-router-dom';
+import { useNavigate, useSearchParams } from 'react-router-dom';
 import { Button } from '@/components/ui/button';
 import { Card } from '@/components/ui/card';
 import { GameGrid } from '@/components/GameGrid';
 import { useGameEngine } from '@/hooks/useGameEngine';
 import { authApi, gameApi } from '@/services/api';
-import { GameMode } from '@/types/game';
-import { ArrowLeft, Play, Pause } from 'lucide-react';
+import { gameRoomApi } from '@/services/gameRooms';
+import { GameMode, PlayerMode } from '@/types/game';
+import { ArrowLeft, Play, Pause, Users } from 'lucide-react';
 import { toast } from '@/hooks/use-toast';
 
 export default function Game() {
   const navigate = useNavigate();
+  const [searchParams] = useSearchParams();
+  const roomCode = searchParams.get('room');
+  const modeParam = searchParams.get('mode') as GameMode | null;
+  
   const [user] = useState(authApi.getCurrentUser());
-  const [selectedMode, setSelectedMode] = useState<GameMode>('walls');
+  const [selectedMode, setSelectedMode] = useState<GameMode>(modeParam || 'walls');
+  const [playerMode, setPlayerMode] = useState<PlayerMode>('single');
   const [gameStarted, setGameStarted] = useState(false);
-  const [player2Name] = useState('AI Opponent');
+  const [setupStep, setSetupStep] = useState<'player-mode' | 'game-mode' | 'ready'>('player-mode');
+  const [player2Name, setPlayer2Name] = useState<string>('AI Opponent');
+
+  // Load room data if joining from lobby
+  useEffect(() => {
+    if (roomCode) {
+      const room = gameRoomApi.getRoom(roomCode);
+      if (room && room.players.length === 2) {
+        setPlayerMode('multiplayer');
+        setSelectedMode(room.mode);
+        setPlayer2Name(room.players.find(p => p !== user?.username) || 'Player 2');
+        setSetupStep('ready');
+      }
+    }
+  }, [roomCode, user]);
 
   const { gameState, startGame, pauseGame, resumeGame, changeDirection } = useGameEngine(
     selectedMode,
+    playerMode,
     user?.username || 'Player 1',
     player2Name
   );
@@ -72,9 +93,9 @@ export default function Game() {
     return () => window.removeEventListener('keydown', handleKeyPress);
   }, [handleKeyPress]);
 
-  // Save game result when finished
+  // Save game result when finished (only for multiplayer)
   useEffect(() => {
-    if (gameState.status === 'finished' && gameStarted) {
+    if (gameState.status === 'finished' && gameStarted && playerMode === 'multiplayer') {
       const saveResult = async () => {
         try {
           await gameApi.saveGameResult({
@@ -82,7 +103,7 @@ export default function Game() {
             player2: player2Name,
             winner: gameState.winner || 'Draw',
             player1Score: gameState.snakes[0].score,
-            player2Score: gameState.snakes[1].score,
+            player2Score: gameState.snakes.length > 1 ? gameState.snakes[1].score : 0,
             mode: selectedMode,
             duration: 60 - gameState.timeRemaining,
           });
@@ -92,15 +113,22 @@ export default function Game() {
       };
       saveResult();
     }
-  }, [gameState.status, gameState.winner, gameStarted, user, player2Name, selectedMode, gameState.snakes, gameState.timeRemaining]);
+  }, [gameState.status, gameState.winner, gameStarted, playerMode, user, player2Name, selectedMode, gameState.snakes, gameState.timeRemaining]);
 
   const handleStartGame = () => {
+    if (setupStep !== 'ready') return;
     setGameStarted(true);
     startGame();
     toast({
       title: 'Game Started!',
       description: 'Good luck!',
     });
+  };
+
+  const handleCreateMultiplayerRoom = () => {
+    if (!user) return;
+    const room = gameRoomApi.createRoom(user.username, selectedMode);
+    navigate(`/lobby?room=${room.id}`);
   };
 
   const handlePauseResume = () => {
@@ -143,10 +171,65 @@ export default function Game() {
           <div className="w-32" /> {/* Spacer for centering */}
         </div>
 
-        {/* Mode Selection */}
-        {!gameStarted && (
+        {/* Player Mode Selection */}
+        {!gameStarted && setupStep === 'player-mode' && (
           <Card className="p-6 border-primary/20 shadow-glow animate-fade-in">
-            <h2 className="text-2xl font-bold text-foreground mb-4">Select Game Mode</h2>
+            <h2 className="text-2xl font-bold text-foreground mb-4">Select Play Mode</h2>
+            <div className="grid md:grid-cols-2 gap-4">
+              <button
+                onClick={() => {
+                  setPlayerMode('single');
+                  setSetupStep('game-mode');
+                }}
+                className="p-6 rounded-lg border-2 border-border hover:border-primary/50 transition-all group"
+              >
+                <div className="flex flex-col items-center gap-3">
+                  <div className="p-4 bg-primary/10 rounded-lg group-hover:bg-primary/20 transition-colors">
+                    <Play className="w-8 h-8 text-primary" />
+                  </div>
+                  <h3 className="font-bold text-foreground text-xl">Single Player</h3>
+                  <p className="text-sm text-muted-foreground text-center">
+                    Play solo and try to beat your high score
+                  </p>
+                </div>
+              </button>
+              <button
+                onClick={() => {
+                  setPlayerMode('multiplayer');
+                  setSetupStep('game-mode');
+                }}
+                className="p-6 rounded-lg border-2 border-border hover:border-secondary/50 transition-all group"
+              >
+                <div className="flex flex-col items-center gap-3">
+                  <div className="p-4 bg-secondary/10 rounded-lg group-hover:bg-secondary/20 transition-colors">
+                    <Users className="w-8 h-8 text-secondary" />
+                  </div>
+                  <h3 className="font-bold text-foreground text-xl">Multiplayer</h3>
+                  <p className="text-sm text-muted-foreground text-center">
+                    Battle against another player in real-time
+                  </p>
+                </div>
+              </button>
+            </div>
+          </Card>
+        )}
+
+        {/* Game Mode Selection */}
+        {!gameStarted && setupStep === 'game-mode' && (
+          <Card className="p-6 border-primary/20 shadow-glow animate-fade-in">
+            <div className="flex items-center justify-between mb-4">
+              <Button
+                variant="ghost"
+                size="sm"
+                onClick={() => setSetupStep('player-mode')}
+                className="text-muted-foreground"
+              >
+                <ArrowLeft className="w-4 h-4 mr-2" />
+                Back
+              </Button>
+              <h2 className="text-2xl font-bold text-foreground">Select Game Mode</h2>
+              <div className="w-20" />
+            </div>
             <div className="grid md:grid-cols-2 gap-4 mb-6">
               <button
                 onClick={() => setSelectedMode('walls')}
@@ -175,13 +258,54 @@ export default function Game() {
                 </p>
               </button>
             </div>
-            <Button
-              onClick={handleStartGame}
-              className="w-full bg-gradient-primary hover:opacity-90 text-primary-foreground font-semibold text-lg h-12"
-            >
-              <Play className="w-5 h-5 mr-2" />
-              Start Game
-            </Button>
+            {playerMode === 'single' ? (
+              <Button
+                onClick={() => setSetupStep('ready')}
+                className="w-full bg-gradient-primary hover:opacity-90 text-primary-foreground font-semibold text-lg h-12"
+              >
+                Continue
+              </Button>
+            ) : (
+              <div className="space-y-3">
+                <Button
+                  onClick={handleCreateMultiplayerRoom}
+                  className="w-full bg-gradient-primary hover:opacity-90 text-primary-foreground font-semibold text-lg h-12"
+                >
+                  Create Room & Invite Friend
+                </Button>
+                <Button
+                  onClick={() => navigate('/lobby')}
+                  variant="outline"
+                  className="w-full border-primary/30 hover:border-primary/50 text-lg h-12"
+                >
+                  Join Existing Room
+                </Button>
+              </div>
+            )}
+          </Card>
+        )}
+
+        {/* Ready to Start */}
+        {!gameStarted && setupStep === 'ready' && (
+          <Card className="p-6 border-primary/20 shadow-glow animate-fade-in">
+            <div className="text-center space-y-4">
+              <h2 className="text-3xl font-bold text-foreground">Ready to Play!</h2>
+              <div className="space-y-2">
+                <p className="text-muted-foreground">
+                  Mode: <span className="text-foreground font-medium capitalize">{selectedMode.replace('-', ' ')}</span>
+                </p>
+                <p className="text-muted-foreground">
+                  Players: <span className="text-foreground font-medium">{playerMode === 'single' ? '1 Player' : '2 Players'}</span>
+                </p>
+              </div>
+              <Button
+                onClick={handleStartGame}
+                className="w-full bg-gradient-primary hover:opacity-90 text-primary-foreground font-semibold text-xl h-14 mt-6"
+              >
+                <Play className="w-6 h-6 mr-2" />
+                Start Game
+              </Button>
+            </div>
           </Card>
         )}
 
@@ -237,6 +361,12 @@ export default function Game() {
                       {selectedMode.replace('-', ' ')}
                     </p>
                   </div>
+                  <div>
+                    <p className="text-sm text-muted-foreground mb-1">Players</p>
+                    <p className="text-lg font-medium text-foreground">
+                      {playerMode === 'single' ? 'Single Player' : 'Multiplayer'}
+                    </p>
+                  </div>
                 </div>
               </Card>
 
@@ -254,17 +384,19 @@ export default function Game() {
                     </div>
                     <p className="text-3xl font-bold text-game-snake1">{gameState.snakes[0].score}</p>
                   </div>
-                  <div>
-                    <div className="flex items-center justify-between mb-2">
-                      <p className="text-sm text-muted-foreground">{player2Name}</p>
-                      <span className={`px-2 py-1 rounded text-xs ${
-                        gameState.snakes[1].alive ? 'bg-accent/20 text-accent' : 'bg-destructive/20 text-destructive'
-                      }`}>
-                        {gameState.snakes[1].alive ? 'ALIVE' : 'DEAD'}
-                      </span>
+                  {playerMode === 'multiplayer' && gameState.snakes.length > 1 && (
+                    <div>
+                      <div className="flex items-center justify-between mb-2">
+                        <p className="text-sm text-muted-foreground">{player2Name}</p>
+                        <span className={`px-2 py-1 rounded text-xs ${
+                          gameState.snakes[1].alive ? 'bg-accent/20 text-accent' : 'bg-destructive/20 text-destructive'
+                        }`}>
+                          {gameState.snakes[1].alive ? 'ALIVE' : 'DEAD'}
+                        </span>
+                      </div>
+                      <p className="text-3xl font-bold text-game-snake2">{gameState.snakes[1].score}</p>
                     </div>
-                    <p className="text-3xl font-bold text-game-snake2">{gameState.snakes[1].score}</p>
-                  </div>
+                  )}
                 </div>
               </Card>
 
@@ -272,13 +404,15 @@ export default function Game() {
                 <h3 className="text-lg font-bold text-foreground mb-3">Controls</h3>
                 <div className="space-y-3 text-sm">
                   <div>
-                    <p className="font-medium text-foreground mb-1">Player 1</p>
+                    <p className="font-medium text-foreground mb-1">{playerMode === 'single' ? 'Controls' : 'Player 1'}</p>
                     <p className="text-muted-foreground">Arrow Keys: ↑ ↓ ← →</p>
                   </div>
-                  <div>
-                    <p className="font-medium text-foreground mb-1">Player 2</p>
-                    <p className="text-muted-foreground">WASD Keys</p>
-                  </div>
+                  {playerMode === 'multiplayer' && (
+                    <div>
+                      <p className="font-medium text-foreground mb-1">Player 2</p>
+                      <p className="text-muted-foreground">WASD Keys</p>
+                    </div>
+                  )}
                 </div>
               </Card>
             </div>
