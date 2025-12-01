@@ -52,7 +52,7 @@ export const GameGrid = ({ gameState }: GameGridProps) => {
                   top: `${segment.y * cellSize}%`,
                   width: `${cellSize}%`,
                   height: `${cellSize}%`,
-                  padding: isHead ? '8%' : '12%',
+                  padding: isHead ? '20%' : '25%',
                 }}
               >
                 <div className={`w-full h-full rounded-sm ${
