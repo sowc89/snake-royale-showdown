@@ -25,15 +25,12 @@ export const GameGrid = ({ gameState }: GameGridProps) => {
           key={`food-${index}`}
           className="absolute rounded-full bg-game-food shadow-glow-accent animate-pulse-glow transition-all duration-100"
           style={{
-            left: `${food.position.x * cellSize}%`,
-            top: `${food.position.y * cellSize}%`,
-            width: `${cellSize}%`,
-            height: `${cellSize}%`,
-            padding: '10%',
+            left: `${food.position.x * cellSize + cellSize * 0.15}%`,
+            top: `${food.position.y * cellSize + cellSize * 0.15}%`,
+            width: `${cellSize * 0.7}%`,
+            height: `${cellSize * 0.7}%`,
           }}
-        >
-          <div className="w-full h-full rounded-full bg-game-food" />
-        </div>
+        />
       ))}
 
       {/* Snakes */}
@@ -41,24 +38,21 @@ export const GameGrid = ({ gameState }: GameGridProps) => {
         <div key={snake.id}>
           {snake.body.map((segment, index) => {
             const isHead = index === 0;
+            const size = isHead ? 0.7 : 0.6;
+            const offset = (1 - size) / 2;
             return (
               <div
                 key={`${snake.id}-${index}`}
                 className={`absolute rounded-sm transition-all duration-100 ${
                   snake.color === 'snake1' ? 'bg-game-snake1' : 'bg-game-snake2'
-                } ${isHead ? 'shadow-glow z-10' : 'opacity-90'}`}
+                } ${isHead ? 'shadow-glow z-10' : 'opacity-80'}`}
                 style={{
-                  left: `${segment.x * cellSize}%`,
-                  top: `${segment.y * cellSize}%`,
-                  width: `${cellSize}%`,
-                  height: `${cellSize}%`,
-                  padding: isHead ? '20%' : '25%',
+                  left: `${(segment.x + offset) * cellSize}%`,
+                  top: `${(segment.y + offset) * cellSize}%`,
+                  width: `${cellSize * size}%`,
+                  height: `${cellSize * size}%`,
                 }}
-              >
-                <div className={`w-full h-full rounded-sm ${
-                  snake.color === 'snake1' ? 'bg-game-snake1' : 'bg-game-snake2'
-                }`} />
-              </div>
+              />
             );
           })}
         </div>

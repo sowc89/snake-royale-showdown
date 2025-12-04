@@ -16,7 +16,7 @@ export default function Game() {
   const roomCode = searchParams.get('room');
   const modeParam = searchParams.get('mode') as GameMode | null;
   
-  const [user] = useState(authApi.getCurrentUser());
+  const [user] = useState(authApi.getCurrentUser() || { username: 'Guest', email: '' });
   const [selectedMode, setSelectedMode] = useState<GameMode>(modeParam || 'walls');
   const [playerMode, setPlayerMode] = useState<PlayerMode>('single');
   const [gameStarted, setGameStarted] = useState(false);
@@ -147,10 +147,6 @@ export default function Game() {
     window.location.reload();
   };
 
-  if (!user) {
-    navigate('/auth');
-    return null;
-  }
 
   return (
     <div className="min-h-screen bg-gradient-to-br from-background via-background to-card p-4">
