@@ -36,7 +36,7 @@ export default function Game() {
     }
   }, [roomCode, user]);
 
-  const { gameState, startGame, pauseGame, resumeGame, changeDirection } = useGameEngine(
+  const { gameState, startGame, pauseGame, resumeGame, resetGame, changeDirection } = useGameEngine(
     selectedMode,
     playerMode,
     user?.username || 'Player 1',
@@ -144,7 +144,9 @@ export default function Game() {
   };
 
   const handlePlayAgain = () => {
-    window.location.reload();
+    resetGame();
+    setGameStarted(false);
+    setSetupStep('ready');
   };
 
 

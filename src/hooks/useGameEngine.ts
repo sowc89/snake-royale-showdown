@@ -5,60 +5,53 @@ const GRID_SIZE = 20;
 const TICK_RATE = 150; // ms per game tick
 const GAME_DURATION = 60; // seconds
 
-const INITIAL_SNAKE_1: Position[] = [
-  { x: 5, y: 10 },
-  { x: 4, y: 10 },
-  { x: 3, y: 10 },
-];
+const INITIAL_SNAKE_1: Position[] = [{ x: 5, y: 10 }];
+const INITIAL_SNAKE_2: Position[] = [{ x: 15, y: 10 }];
 
-const INITIAL_SNAKE_2: Position[] = [
-  { x: 15, y: 10 },
-  { x: 16, y: 10 },
-  { x: 17, y: 10 },
-];
+const createInitialState = (mode: GameMode, playerMode: PlayerMode): GameState => ({
+  snakes: playerMode === 'single' 
+    ? [
+        {
+          id: 'player1',
+          body: [...INITIAL_SNAKE_1],
+          direction: 'RIGHT',
+          nextDirection: 'RIGHT',
+          alive: true,
+          score: 0,
+          color: 'snake1',
+        }
+      ]
+    : [
+        {
+          id: 'player1',
+          body: [...INITIAL_SNAKE_1],
+          direction: 'RIGHT',
+          nextDirection: 'RIGHT',
+          alive: true,
+          score: 0,
+          color: 'snake1',
+        },
+        {
+          id: 'player2',
+          body: [...INITIAL_SNAKE_2],
+          direction: 'LEFT',
+          nextDirection: 'LEFT',
+          alive: true,
+          score: 0,
+          color: 'snake2',
+        },
+      ],
+  food: [],
+  gridSize: GRID_SIZE,
+  mode,
+  playerMode,
+  status: 'waiting',
+  timeRemaining: GAME_DURATION,
+  winner: null,
+});
 
 export const useGameEngine = (mode: GameMode, playerMode: PlayerMode, player1Name: string, player2Name?: string) => {
-  const [gameState, setGameState] = useState<GameState>({
-    snakes: playerMode === 'single' 
-      ? [
-          {
-            id: 'player1',
-            body: INITIAL_SNAKE_1,
-            direction: 'RIGHT',
-            nextDirection: 'RIGHT',
-            alive: true,
-            score: 0,
-            color: 'snake1',
-          }
-        ]
-      : [
-          {
-            id: 'player1',
-            body: INITIAL_SNAKE_1,
-            direction: 'RIGHT',
-            nextDirection: 'RIGHT',
-            alive: true,
-            score: 0,
-            color: 'snake1',
-          },
-          {
-            id: 'player2',
-            body: INITIAL_SNAKE_2,
-            direction: 'LEFT',
-            nextDirection: 'LEFT',
-            alive: true,
-            score: 0,
-            color: 'snake2',
-          },
-        ],
-    food: [],
-    gridSize: GRID_SIZE,
-    mode,
-    playerMode,
-    status: 'waiting',
-    timeRemaining: GAME_DURATION,
-    winner: null,
-  });
+  const [gameState, setGameState] = useState<GameState>(() => createInitialState(mode, playerMode));
 
   const gameLoopRef = useRef<NodeJS.Timeout | null>(null);
   const timerRef = useRef<NodeJS.Timeout | null>(null);
@@ -264,6 +257,11 @@ export const useGameEngine = (mode: GameMode, playerMode: PlayerMode, player1Nam
     setGameState(prev => ({ ...prev, status: 'playing' }));
   }, []);
 
+  // Reset game
+  const resetGame = useCallback(() => {
+    setGameState(createInitialState(mode, playerMode));
+  }, [mode, playerMode]);
+
   // Change direction
   const changeDirection = useCallback((snakeId: string, direction: Direction) => {
     setGameState(prev => ({
@@ -318,6 +316,7 @@ export const useGameEngine = (mode: GameMode, playerMode: PlayerMode, player1Nam
     startGame,
     pauseGame,
     resumeGame,
+    resetGame,
     changeDirection,
   };
 };
