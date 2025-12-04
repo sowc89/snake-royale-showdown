@@ -69,12 +69,14 @@ export const GameGrid = ({ gameState }: GameGridProps) => {
             <div className="flex gap-8 justify-center text-lg">
               <div>
                 <p className="text-muted-foreground">Player 1</p>
-                <p className="text-game-snake1 font-bold text-2xl">{gameState.snakes[0].score}</p>
+                <p className="text-game-snake1 font-bold text-2xl">{gameState.snakes[0]?.score ?? 0}</p>
               </div>
-              <div>
-                <p className="text-muted-foreground">Player 2</p>
-                <p className="text-game-snake2 font-bold text-2xl">{gameState.snakes[1].score}</p>
-              </div>
+              {gameState.snakes.length > 1 && (
+                <div>
+                  <p className="text-muted-foreground">Player 2</p>
+                  <p className="text-game-snake2 font-bold text-2xl">{gameState.snakes[1]?.score ?? 0}</p>
+                </div>
+              )}
             </div>
           </div>
         </div>
