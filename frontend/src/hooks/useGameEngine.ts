@@ -53,6 +53,16 @@ const createInitialState = (mode: GameMode, playerMode: PlayerMode): GameState =
 export const useGameEngine = (mode: GameMode, playerMode: PlayerMode, player1Name: string, player2Name?: string) => {
   const [gameState, setGameState] = useState<GameState>(() => createInitialState(mode, playerMode));
 
+  // Update game state when mode changes (to reflect mode selection before game starts)
+  useEffect(() => {
+    if (gameState.status === 'waiting') {
+      setGameState(prev => ({
+        ...prev,
+        mode,
+      }));
+    }
+  }, [mode, gameState.status]);
+
   const gameLoopRef = useRef<NodeJS.Timeout | null>(null);
   const timerRef = useRef<NodeJS.Timeout | null>(null);
 
