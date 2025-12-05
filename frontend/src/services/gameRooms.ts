@@ -1,72 +1,59 @@
-// Mock game room management service
+// Game room management service
 import { GameRoom, GameMode } from '@/types/game';
 
-const gameRooms = new Map<string, GameRoom>();
-
-// Generate random 6-character room code
-const generateRoomCode = (): string => {
-  return Math.random().toString(36).substring(2, 8).toUpperCase();
+// Helper for making authenticated requests
+const getAuthHeaders = () => {
+  const token = localStorage.getItem('token');
+  return token ? { 'Authorization': `Bearer ${token}`, 'Content-Type': 'application/json' } : { 'Content-Type': 'application/json' };
 };
 
 export const gameRoomApi = {
-  createRoom: (hostUsername: string, mode: GameMode): GameRoom => {
-    const roomCode = generateRoomCode();
-    const room: GameRoom = {
-      id: roomCode,
-      hostUsername,
-      mode,
-      status: 'waiting',
-      players: [hostUsername],
-      maxPlayers: 2,
-    };
-    
-    gameRooms.set(roomCode, room);
-    return room;
+  createRoom: async (hostUsername: string, mode: GameMode): Promise<GameRoom> => {
+    const res = await fetch('/rooms', {
+      method: 'POST',
+      headers: getAuthHeaders(),
+      body: JSON.stringify({ hostUsername, mode }),
+    });
+    if (!res.ok) {
+      const err = await res.json();
+      throw new Error(err.detail || 'Failed to create room');
+    }
+    return await res.json();
   },
 
-  joinRoom: (roomCode: string, username: string): GameRoom | null => {
-    const room = gameRooms.get(roomCode.toUpperCase());
-    
-    if (!room) {
-      throw new Error('Room not found');
+  joinRoom: async (roomCode: string, username: string): Promise<GameRoom> => {
+    const res = await fetch(`/rooms/${roomCode}/join`, {
+      method: 'POST',
+      headers: getAuthHeaders(),
+      body: JSON.stringify({ username }),
+    });
+    if (!res.ok) {
+      const err = await res.json();
+      throw new Error(err.detail || 'Failed to join room');
     }
-    
-    if (room.status !== 'waiting') {
-      throw new Error('Game already in progress');
-    }
-    
-    if (room.players.length >= room.maxPlayers) {
-      throw new Error('Room is full');
-    }
-    
-    if (room.players.includes(username)) {
-      throw new Error('You are already in this room');
-    }
-    
-    room.players.push(username);
-    return room;
+    return await res.json();
   },
 
-  getRoom: (roomCode: string): GameRoom | null => {
-    return gameRooms.get(roomCode.toUpperCase()) || null;
+  getRoom: async (roomCode: string): Promise<GameRoom | null> => {
+    const res = await fetch(`/rooms/${roomCode}`);
+    if (res.status === 404) return null;
+    if (!res.ok) throw new Error('Failed to fetch room');
+    return await res.json();
   },
 
-  startGame: (roomCode: string): void => {
-    const room = gameRooms.get(roomCode.toUpperCase());
-    if (room) {
-      room.status = 'in-progress';
-    }
+  startGame: async (roomCode: string): Promise<void> => {
+    const res = await fetch(`/rooms/${roomCode}`, {
+      method: 'POST',
+      headers: getAuthHeaders(),
+    });
+    if (!res.ok) throw new Error('Failed to start game');
   },
 
-  leaveRoom: (roomCode: string, username: string): void => {
-    const room = gameRooms.get(roomCode.toUpperCase());
-    if (room) {
-      room.players = room.players.filter(p => p !== username);
-      
-      // Delete room if empty or if host leaves
-      if (room.players.length === 0 || username === room.hostUsername) {
-        gameRooms.delete(roomCode.toUpperCase());
-      }
-    }
+  leaveRoom: async (roomCode: string, username: string): Promise<void> => {
+    await fetch(`/rooms/${roomCode}/leave`, {
+      method: 'POST',
+      headers: getAuthHeaders(),
+      body: JSON.stringify({ username }),
+    });
   },
 };
