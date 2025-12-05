@@ -66,7 +66,7 @@ def get_modes():
 
 @router.post("/games/results", response_model=schemas.GameResult, status_code=201)
 def save_result(payload: SaveGameResultRequest, current_user: schemas.User = Depends(get_current_user)):
-    data = payload.dict()
+    data = payload.model_dump()
     result = db.save_game_result(data)
     return result
 

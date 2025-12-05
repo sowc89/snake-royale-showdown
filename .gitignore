@@ -1,0 +1,21 @@
+# General
+.DS_Store
+.vscode/
+*.log
+
+# Python / Backend
+__pycache__/
+*.py[cod]
+*$py.class
+.venv/
+venv/
+env/
+.env
+*.sqlite3
+
+# Node / Frontend
+node_modules/
+dist/
+build/
+.npm
+*.local

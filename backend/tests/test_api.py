@@ -1,6 +1,6 @@
 import asyncio
 import pytest
-from httpx import AsyncClient
+from httpx import AsyncClient, ASGITransport
 
 from backend.app import app
 from backend import db
@@ -8,7 +8,7 @@ from backend import db
 
 @pytest.mark.asyncio
 async def test_signup_login_logout_me():
-    async with AsyncClient(app=app, base_url="http://test") as ac:
+    async with AsyncClient(transport=ASGITransport(app=app), base_url="http://test") as ac:
         # signup
         r = await ac.post("/auth/signup", json={"email": "demo@game.com", "password": "demo", "username": "DemoPlayer"})
         assert r.status_code == 201
@@ -31,7 +31,7 @@ async def test_signup_login_logout_me():
 
 @pytest.mark.asyncio
 async def test_modes_and_leaderboard_and_live_games():
-    async with AsyncClient(app=app, base_url="http://test") as ac:
+    async with AsyncClient(transport=ASGITransport(app=app), base_url="http://test") as ac:
         r = await ac.get("/modes")
         assert r.status_code == 200
         modes = r.json()
@@ -47,7 +47,7 @@ async def test_modes_and_leaderboard_and_live_games():
 
 @pytest.mark.asyncio
 async def test_rooms_and_game_result():
-    async with AsyncClient(app=app, base_url="http://test") as ac:
+    async with AsyncClient(transport=ASGITransport(app=app), base_url="http://test") as ac:
         # create room
         r = await ac.post("/rooms", json={"hostUsername": "Host", "mode": "walls"})
         assert r.status_code == 201

@@ -2,14 +2,41 @@ from typing import Dict, List
 import time
 import uuid
 
-from .schemas import User, GameResult, GameRoom, LiveGame
+try:
+    from .schemas import User, GameResult, GameRoom, LiveGame
+except ImportError:
+    from schemas import User, GameResult, GameRoom, LiveGame
 
 # Simple in-memory mock database
-USERS: Dict[str, User] = {}
+# Simple in-memory mock database
+USERS: Dict[str, User] = {
+    "u1": User(id="u1", username="DemoPlayer", email="demo@game.com"),
+    "u2": User(id="u2", username="ProGamer", email="pro@game.com"),
+}
 TOKENS: Dict[str, str] = {}  # token -> user_id
-GAME_RESULTS: Dict[str, GameResult] = {}
-GAME_ROOMS: Dict[str, GameRoom] = {}
-LIVE_GAMES: Dict[str, LiveGame] = {}
+GAME_RESULTS: Dict[str, GameResult] = {
+    "r1": GameResult(
+        id="r1", player1="DemoPlayer", player2="ProGamer", winner="ProGamer",
+        player1Score=10, player2Score=25, mode="walls", duration=120, timestamp=int(time.time()) - 3600
+    ),
+    "r2": GameResult(
+        id="r2", player1="DemoPlayer", player2="ProGamer", winner="DemoPlayer",
+        player1Score=15, player2Score=10, mode="pass-through", duration=90, timestamp=int(time.time()) - 7200
+    ),
+}
+GAME_ROOMS: Dict[str, GameRoom] = {
+    "room1": GameRoom(
+        id="room1", hostUsername="ProGamer", mode="walls", status="waiting",
+        players=["ProGamer"], maxPlayers=2
+    )
+}
+LIVE_GAMES: Dict[str, LiveGame] = {
+    "live1": LiveGame(
+        id="live1", player1="DemoPlayer", player2="ProGamer",
+        player1Score=5, player2Score=8, mode="walls",
+        timeRemaining=45, player1Alive=True, player2Alive=True
+    )
+}
 
 
 def create_user(username: str, email: str) -> User:
