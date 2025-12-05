@@ -1,7 +1,11 @@
 from fastapi import APIRouter, HTTPException, Depends, Header, status
 from typing import Optional
-from . import db, schemas
-from .schemas import AuthRequest, SignupRequest, AuthResponse, CreateRoomRequest, JoinRoomRequest, SaveGameResultRequest
+try:
+    from . import db, schemas
+    from .schemas import AuthRequest, SignupRequest, AuthResponse, CreateRoomRequest, JoinRoomRequest, SaveGameResultRequest
+except Exception:
+    import db, schemas
+    from schemas import AuthRequest, SignupRequest, AuthResponse, CreateRoomRequest, JoinRoomRequest, SaveGameResultRequest
 
 router = APIRouter()
 

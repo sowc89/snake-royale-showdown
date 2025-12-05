@@ -1,6 +1,11 @@
 from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
-from . import routes
+try:
+    # If package import (backend.app)
+    from . import routes
+except Exception:
+    # When running tests from backend/ cwd, use local import
+    import routes
 
 app = FastAPI(title="Snake Royale Showdown - Mock Backend")
 
