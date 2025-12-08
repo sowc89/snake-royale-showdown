@@ -1,107 +1,147 @@
-from typing import Dict, List
-import time
+from sqlalchemy.ext.asyncio import AsyncSession
+from sqlalchemy.future import select
+from sqlalchemy import delete
 import uuid
+import time
+from typing import Optional, List, Tuple
 
-try:
-    from .schemas import User, GameResult, GameRoom, LiveGame
-except ImportError:
-    from schemas import User, GameResult, GameRoom, LiveGame
+from . import models, schemas
 
-# Simple in-memory mock database
-# Simple in-memory mock database
-USERS: Dict[str, User] = {
-    "u1": User(id="u1", username="DemoPlayer", email="demo@game.com"),
-    "u2": User(id="u2", username="ProGamer", email="pro@game.com"),
-}
-TOKENS: Dict[str, str] = {}  # token -> user_id
-GAME_RESULTS: Dict[str, GameResult] = {
-    "r1": GameResult(
-        id="r1", player1="DemoPlayer", player2="ProGamer", winner="ProGamer",
-        player1Score=10, player2Score=25, mode="walls", duration=120, timestamp=int(time.time()) - 3600
-    ),
-    "r2": GameResult(
-        id="r2", player1="DemoPlayer", player2="ProGamer", winner="DemoPlayer",
-        player1Score=15, player2Score=10, mode="pass-through", duration=90, timestamp=int(time.time()) - 7200
-    ),
-}
-GAME_ROOMS: Dict[str, GameRoom] = {
-    "room1": GameRoom(
-        id="room1", hostUsername="ProGamer", mode="walls", status="waiting",
-        players=["ProGamer"], maxPlayers=2
-    )
-}
-LIVE_GAMES: Dict[str, LiveGame] = {
-    "live1": LiveGame(
-        id="live1", player1="DemoPlayer", player2="ProGamer",
-        player1Score=5, player2Score=8, mode="walls",
-        timeRemaining=45, player1Alive=True, player2Alive=True
-    )
-}
+# In-memory token storage (for simplicity, could be Redis or DB table)
+TOKENS = {}
 
-
-def create_user(username: str, email: str) -> User:
+async def create_user(db: AsyncSession, username: str, email: str) -> models.User:
     user_id = str(uuid.uuid4())
-    user = User(id=user_id, username=username, email=email)
-    USERS[user_id] = user
-    return user
+    db_user = models.User(id=user_id, username=username, email=email)
+    db.add(db_user)
+    await db.commit()
+    await db.refresh(db_user)
+    return db_user
 
-
-def authenticate_user(email: str, password: str):
-    # In the mock DB, password is not stored; we accept demo credentials
-    for user in USERS.values():
-        if user.email == email:
-            return user
-    return None
-
+async def authenticate_user(db: AsyncSession, email: str, password: str) -> Optional[models.User]:
+    # Password check is still mock (accepts any password if email exists)
+    result = await db.execute(select(models.User).where(models.User.email == email))
+    return result.scalars().first()
 
 def issue_token_for_user(user_id: str) -> str:
     token = str(uuid.uuid4())
     TOKENS[token] = user_id
     return token
 
-
-def get_user_by_token(token: str):
+async def get_user_by_token(db: AsyncSession, token: str) -> Optional[models.User]:
     user_id = TOKENS.get(token)
     if not user_id:
         return None
-    return USERS.get(user_id)
+    result = await db.execute(select(models.User).where(models.User.id == user_id))
+    return result.scalars().first()
 
-
-def save_game_result(data: dict) -> GameResult:
+async def save_game_result(db: AsyncSession, data: dict) -> models.GameResult:
     rid = str(uuid.uuid4())
     timestamp = int(time.time())
-    result = GameResult(id=rid, timestamp=timestamp, **data)
-    GAME_RESULTS[rid] = result
+    result = models.GameResult(id=rid, timestamp=timestamp, **data)
+    db.add(result)
+    await db.commit()
+    await db.refresh(result)
     return result
 
+async def get_leaderboard(db: AsyncSession) -> List[schemas.LeaderboardEntry]:
+    # Calculate leaderboard from game results
+    result = await db.execute(select(models.GameResult))
+    game_results = result.scalars().all()
 
-def create_room(hostUsername: str, mode: str, maxPlayers: int = 2) -> GameRoom:
+    player_stats = {}
+    for res in game_results:
+        for player, score in [(res.player1, res.player1Score), (res.player2, res.player2Score)]:
+            if player not in player_stats:
+                player_stats[player] = {"wins": 0, "games": 0, "highestScore": 0}
+            
+            stats = player_stats[player]
+            stats["games"] += 1
+            stats["highestScore"] = max(stats["highestScore"], score)
+            if res.winner == player:
+                stats["wins"] += 1
+
+    entries = []
+    for username, stats in player_stats.items():
+        win_rate = (stats["wins"] / stats["games"]) * 100 if stats["games"] > 0 else 0
+        entries.append(schemas.LeaderboardEntry(
+            rank=0,
+            username=username,
+            wins=stats["wins"],
+            totalGames=stats["games"],
+            highestScore=stats["highestScore"],
+            winRate=win_rate
+        ))
+    
+    # Sort by wins, then winRate, then highestScore
+    entries.sort(key=lambda x: (x.wins, x.winRate, x.highestScore), reverse=True)
+    for i, entry in enumerate(entries):
+        entry.rank = i + 1
+        
+    return entries
+
+async def create_room(db: AsyncSession, hostUsername: str, mode: str, maxPlayers: int = 2) -> models.GameRoom:
     rid = str(uuid.uuid4())
-    room = GameRoom(id=rid, hostUsername=hostUsername, mode=mode, status="waiting", players=[hostUsername], maxPlayers=maxPlayers)
-    GAME_ROOMS[rid] = room
+    room = models.GameRoom(
+        id=rid, 
+        hostUsername=hostUsername, 
+        mode=mode, 
+        status="waiting", 
+        players=[hostUsername], 
+        maxPlayers=maxPlayers
+    )
+    db.add(room)
+    await db.commit()
+    await db.refresh(room)
     return room
 
+async def get_room(db: AsyncSession, room_id: str) -> Optional[models.GameRoom]:
+    result = await db.execute(select(models.GameRoom).where(models.GameRoom.id == room_id))
+    return result.scalars().first()
 
-def get_room(room_id: str):
-    return GAME_ROOMS.get(room_id)
-
-
-def join_room(room_id: str, username: str):
-    room = GAME_ROOMS.get(room_id)
+async def join_room(db: AsyncSession, room_id: str, username: str) -> Tuple[Optional[models.GameRoom], Optional[str]]:
+    room = await get_room(db, room_id)
     if not room:
         return None, "not_found"
-    if len(room.players) >= room.maxPlayers:
+    
+    # Need to handle JSON list mutation carefully with SQLAlchemy
+    current_players = list(room.players)
+    
+    if len(current_players) >= room.maxPlayers:
         return None, "full"
-    if username in room.players:
+    if username in current_players:
         return None, "already"
-    room.players.append(username)
+    
+    current_players.append(username)
+    room.players = current_players
+    
+    await db.commit()
+    await db.refresh(room)
     return room, None
 
-
-def leave_room(room_id: str, username: str):
-    room = GAME_ROOMS.get(room_id)
+async def leave_room(db: AsyncSession, room_id: str, username: str) -> bool:
+    room = await get_room(db, room_id)
     if not room:
         return False
-    if username in room.players:
-        room.players.remove(username)
-    return True
+    
+    current_players = list(room.players)
+    if username in current_players:
+        current_players.remove(username)
+        room.players = current_players
+        
+        if len(current_players) == 0 or username == room.hostUsername:
+             await db.delete(room)
+        
+        await db.commit()
+        return True
+    return True # Or False if user wasn't in room? Logic says success if they are gone.
+
+async def start_room(db: AsyncSession, room_id: str):
+    room = await get_room(db, room_id)
+    if room:
+        room.status = "in-progress"
+        await db.commit()
+
+async def get_live_games(db: AsyncSession) -> List[models.LiveGame]:
+    result = await db.execute(select(models.LiveGame))
+    return result.scalars().all()

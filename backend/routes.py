@@ -1,50 +1,61 @@
 from fastapi import APIRouter, HTTPException, Depends, Header, status
-from typing import Optional
-try:
-    from . import db, schemas
-    from .schemas import AuthRequest, SignupRequest, AuthResponse, CreateRoomRequest, JoinRoomRequest, SaveGameResultRequest
-except Exception:
-    import db, schemas
-    from schemas import AuthRequest, SignupRequest, AuthResponse, CreateRoomRequest, JoinRoomRequest, SaveGameResultRequest
+from sqlalchemy.ext.asyncio import AsyncSession
+from typing import Optional, List
+from . import db, schemas, database, models
 
 router = APIRouter()
 
+# Dependency
+async def get_db_session():
+    async with database.SessionLocal() as session:
+        yield session
 
-def get_current_user(authorization: Optional[str] = Header(None)):
+async def get_current_user(
+    authorization: Optional[str] = Header(None),
+    session: AsyncSession = Depends(get_db_session)
+):
     if not authorization:
         raise HTTPException(status_code=401, detail="Not authenticated")
     if authorization.lower().startswith("bearer "):
         token = authorization.split(" ", 1)[1]
     else:
         token = authorization
-    user = db.get_user_by_token(token)
+    user = await db.get_user_by_token(session, token)
     if not user:
         raise HTTPException(status_code=401, detail="Invalid token")
     return user
 
 
-@router.post("/auth/signup", response_model=AuthResponse, status_code=201)
-def signup(payload: SignupRequest):
-    # Check email unique
-    for u in db.USERS.values():
-        if u.email == payload.email:
-            raise HTTPException(status_code=400, detail="Email already exists")
-    user = db.create_user(payload.username, payload.email)
+@router.post("/auth/signup", response_model=schemas.AuthResponse, status_code=201)
+async def signup(payload: schemas.SignupRequest, session: AsyncSession = Depends(get_db_session)):
+    # Check email unique - simplified for now, usually DB constraint handles this
+    # But we can do a check if we want specific error message
+    # For now, let's just try to create and catch error or let create_user handle it?
+    # The current create_user doesn't check, so let's check manually
+    from sqlalchemy import select
+    res = await session.execute(select(models.User).where(models.User.email == payload.email))
+    if res.scalars().first():
+        raise HTTPException(status_code=400, detail="Email already exists")
+
+    user = await db.create_user(session, payload.username, payload.email)
     token = db.issue_token_for_user(user.id)
-    return AuthResponse(user=user, token=token)
+    return schemas.AuthResponse(user=user, token=token)
 
 
-@router.post("/auth/login", response_model=AuthResponse)
-def login(payload: AuthRequest):
-    user = db.authenticate_user(payload.email, payload.password)
+@router.post("/auth/login", response_model=schemas.AuthResponse)
+async def login(payload: schemas.AuthRequest, session: AsyncSession = Depends(get_db_session)):
+    user = await db.authenticate_user(session, payload.email, payload.password)
     if not user:
         raise HTTPException(status_code=401, detail="Invalid credentials")
     token = db.issue_token_for_user(user.id)
-    return AuthResponse(user=user, token=token)
+    return schemas.AuthResponse(user=user, token=token)
 
 
 @router.post("/auth/logout", status_code=204)
-def logout(current_user: schemas.User = Depends(get_current_user), authorization: Optional[str] = Header(None)):
+async def logout(
+    current_user: models.User = Depends(get_current_user), 
+    authorization: Optional[str] = Header(None)
+):
     token = authorization.split(" ", 1)[1]
     if token in db.TOKENS:
         del db.TOKENS[token]
@@ -52,12 +63,12 @@ def logout(current_user: schemas.User = Depends(get_current_user), authorization
 
 
 @router.get("/auth/me", response_model=schemas.User)
-def me(current_user: schemas.User = Depends(get_current_user)):
+async def me(current_user: models.User = Depends(get_current_user)):
     return current_user
 
 
 @router.get("/modes")
-def get_modes():
+async def get_modes():
     return [
         {"id": "pass-through", "name": "Pass-Through", "description": "Snakes wrap around"},
         {"id": "walls", "name": "Walls", "description": "Hitting walls kills you"},
@@ -65,53 +76,59 @@ def get_modes():
 
 
 @router.post("/games/results", response_model=schemas.GameResult, status_code=201)
-def save_result(payload: SaveGameResultRequest, current_user: schemas.User = Depends(get_current_user)):
+async def save_result(
+    payload: schemas.SaveGameResultRequest, 
+    current_user: models.User = Depends(get_current_user),
+    session: AsyncSession = Depends(get_db_session)
+):
     data = payload.model_dump()
-    result = db.save_game_result(data)
+    result = await db.save_game_result(session, data)
     return result
 
 
-@router.get("/leaderboard", response_model=list[schemas.LeaderboardEntry])
-def leaderboard():
-    # Simple mock leaderboard
-    entries = [
-        {"rank": 1, "username": "DemoPlayer", "wins": 10, "totalGames": 15, "highestScore": 42, "winRate": 0.66},
-        {"rank": 2, "username": "Player2", "wins": 5, "totalGames": 12, "highestScore": 32, "winRate": 0.42},
-    ]
-    return entries
+@router.get("/leaderboard", response_model=List[schemas.LeaderboardEntry])
+async def leaderboard(session: AsyncSession = Depends(get_db_session)):
+    return await db.get_leaderboard(session)
 
 
-@router.get("/live-games", response_model=list[schemas.LiveGame])
-def live_games():
-    return list(db.LIVE_GAMES.values())
+@router.get("/live-games", response_model=List[schemas.LiveGame])
+async def live_games(session: AsyncSession = Depends(get_db_session)):
+    return await db.get_live_games(session)
 
 
 @router.post("/rooms", response_model=schemas.GameRoom, status_code=201)
-def create_room(payload: CreateRoomRequest):
-    room = db.create_room(payload.hostUsername, payload.mode)
+async def create_room(
+    payload: schemas.CreateRoomRequest,
+    session: AsyncSession = Depends(get_db_session)
+):
+    room = await db.create_room(session, payload.hostUsername, payload.mode)
     return room
 
 
 @router.get("/rooms/{roomId}", response_model=schemas.GameRoom)
-def get_room(roomId: str):
-    room = db.get_room(roomId)
+async def get_room(roomId: str, session: AsyncSession = Depends(get_db_session)):
+    room = await db.get_room(session, roomId)
     if not room:
         raise HTTPException(status_code=404, detail="Room not found")
     return room
 
 
 @router.post("/rooms/{roomId}", status_code=204)
-def start_room(roomId: str):
-    room = db.get_room(roomId)
+async def start_room(roomId: str, session: AsyncSession = Depends(get_db_session)):
+    room = await db.get_room(session, roomId)
     if not room:
         raise HTTPException(status_code=404, detail="Room not found")
-    room.status = "in-progress"
+    await db.start_room(session, roomId)
     return None
 
 
 @router.post("/rooms/{roomId}/join", response_model=schemas.GameRoom)
-def join_room(roomId: str, payload: JoinRoomRequest):
-    room, err = db.join_room(roomId, payload.username)
+async def join_room(
+    roomId: str, 
+    payload: schemas.JoinRoomRequest,
+    session: AsyncSession = Depends(get_db_session)
+):
+    room, err = await db.join_room(session, roomId, payload.username)
     if err == "not_found":
         raise HTTPException(status_code=404, detail="Room not found")
     if err == "full":
@@ -122,8 +139,12 @@ def join_room(roomId: str, payload: JoinRoomRequest):
 
 
 @router.post("/rooms/{roomId}/leave", status_code=204)
-def leave_room(roomId: str, payload: JoinRoomRequest):
-    ok = db.leave_room(roomId, payload.username)
+async def leave_room(
+    roomId: str, 
+    payload: schemas.JoinRoomRequest,
+    session: AsyncSession = Depends(get_db_session)
+):
+    ok = await db.leave_room(session, roomId, payload.username)
     if not ok:
         raise HTTPException(status_code=404, detail="Room not found")
     return None

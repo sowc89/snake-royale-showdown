@@ -1,13 +1,17 @@
 from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
-try:
-    # If package import (backend.app)
-    from . import routes
-except Exception:
-    # When running tests from backend/ cwd, use local import
-    import routes
+from contextlib import asynccontextmanager
+from .database import engine, Base
+from . import routes
 
-app = FastAPI(title="Snake Royale Showdown - Mock Backend")
+@asynccontextmanager
+async def lifespan(app: FastAPI):
+    # Create tables on startup
+    async with engine.begin() as conn:
+        await conn.run_sync(Base.metadata.create_all)
+    yield
+
+app = FastAPI(title="Snake Royale Showdown - Mock Backend", lifespan=lifespan)
 
 app.add_middleware(
     CORSMiddleware,
